@@ -1,0 +1,198 @@
+﻿<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SSGDFS 搜索导出</title>
+  <style>
+    body { font-family: "Microsoft YaHei", sans-serif; max-width: 1200px; margin: 24px auto; padding: 0 16px; color: #111; }
+    h1 { margin-bottom: 16px; }
+    form { display: flex; gap: 12px; margin-bottom: 10px; }
+    input[type="text"] { flex: 1; padding: 10px; font-size: 15px; border: 1px solid #ccc; border-radius: 6px; }
+    button, .btn { padding: 10px 16px; border: none; background: #111; color: #fff; cursor: pointer; text-decoration: none; display: inline-block; border-radius: 6px; }
+    button[disabled] { opacity: 0.6; cursor: not-allowed; }
+    .btn-secondary { background: #0b63ce; }
+    .error { color: #b00020; margin: 10px 0; }
+    .ok { color: #1b5e20; margin: 10px 0; }
+    .empty { margin: 18px 0; padding: 14px; background: #fafafa; border: 1px dashed #ccc; color: #666; border-radius: 6px; }
+    .hint { color: #666; font-size: 13px; margin-top: 8px; }
+    .toolbar { margin: 12px 0; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+    .toolbar select { padding: 6px 8px; }
+    table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 14px; }
+    th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+    th { background: #f5f5f5; }
+    .pagination { margin-top: 12px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    .pagination button { padding: 6px 10px; }
+    .loading-mask {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.35);
+      z-index: 9999;
+      align-items: center;
+      justify-content: center;
+    }
+    .loading-box {
+      background: #fff;
+      padding: 18px 22px;
+      border-radius: 8px;
+      min-width: 220px;
+      text-align: center;
+      box-shadow: 0 8px 28px rgba(0,0,0,0.2);
+    }
+    .spinner {
+      width: 28px;
+      height: 28px;
+      border: 3px solid #ddd;
+      border-top-color: #111;
+      border-radius: 50%;
+      margin: 0 auto 10px;
+      animation: spin .8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+  <h1>SSGDFS 搜索导出 Excel</h1>
+
+  <form id="search-form" method="post" action="{{ url_for('generate') }}">
+    <input type="text" name="keyword" value="{{ keyword or '' }}" placeholder="输入关键词，例如：伊索" required />
+    <button id="submit-btn" type="submit">生成</button>
+  </form>
+
+  <div class="hint">点击生成后会自动抓取多页数据，完成后可直接下载 Excel。</div>
+
+  {% if error %}
+    <div class="error">{{ error }}</div>
+  {% endif %}
+
+  {% if no_data %}
+    <div class="empty">未检索到数据，请更换关键词后重试。</div>
+  {% endif %}
+
+  {% if total %}
+    <div class="ok">抓取完成：{{ total }} 条</div>
+    <a class="btn btn-secondary" href="{{ download_url }}">导出 Excel（{{ file_name }}）</a>
+
+    <div class="toolbar">
+      <label for="page-size">每页条数：</label>
+      <select id="page-size">
+        <option value="10">10</option>
+        <option value="20" selected>20</option>
+        <option value="50">50</option>
+      </select>
+      <span id="page-info"></span>
+    </div>
+
+    <table>
+      <thead>
+        <tr>
+          <th>关键词</th>
+          <th>品牌</th>
+          <th>商品名</th>
+          <th>销售价</th>
+          <th>RefNO</th>
+          <th>商品编码</th>
+        </tr>
+      </thead>
+      <tbody id="result-body"></tbody>
+    </table>
+
+    <div class="pagination">
+      <button type="button" id="first-page">首页</button>
+      <button type="button" id="prev-page">上一页</button>
+      <button type="button" id="next-page">下一页</button>
+      <button type="button" id="last-page">末页</button>
+    </div>
+  {% else %}
+    <div class="empty">还没有结果。请输入关键词后点击“生成”。</div>
+  {% endif %}
+
+  <div id="loading-mask" class="loading-mask">
+    <div class="loading-box">
+      <div class="spinner"></div>
+      <div>正在抓取，请稍候...</div>
+    </div>
+  </div>
+
+  {% if total %}
+  <script>
+    const rows = {{ rows|tojson|safe }};
+    const body = document.getElementById('result-body');
+    const pageSizeSelect = document.getElementById('page-size');
+    const pageInfo = document.getElementById('page-info');
+    const firstBtn = document.getElementById('first-page');
+    const prevBtn = document.getElementById('prev-page');
+    const nextBtn = document.getElementById('next-page');
+    const lastBtn = document.getElementById('last-page');
+
+    let currentPage = 1;
+    let pageSize = Number(pageSizeSelect.value);
+
+    function totalPages() {
+      return Math.max(1, Math.ceil(rows.length / pageSize));
+    }
+
+    function escapeHtml(value) {
+      return String(value ?? '')
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#39;');
+    }
+
+    function render() {
+      const pages = totalPages();
+      if (currentPage > pages) currentPage = pages;
+      const start = (currentPage - 1) * pageSize;
+      const end = Math.min(start + pageSize, rows.length);
+      const slice = rows.slice(start, end);
+
+      body.innerHTML = slice.map(r => `
+        <tr>
+          <td>${escapeHtml(r['关键词'])}</td>
+          <td>${escapeHtml(r['品牌'])}</td>
+          <td>${escapeHtml(r['商品名'])}</td>
+          <td>${escapeHtml(r['销售价'])}</td>
+          <td>${escapeHtml(r['RefNO'])}</td>
+          <td>${escapeHtml(r['商品编码'])}</td>
+        </tr>
+      `).join('');
+
+      pageInfo.textContent = `第 ${currentPage} / ${pages} 页，共 ${rows.length} 条`;
+      firstBtn.disabled = currentPage === 1;
+      prevBtn.disabled = currentPage === 1;
+      nextBtn.disabled = currentPage === pages;
+      lastBtn.disabled = currentPage === pages;
+    }
+
+    pageSizeSelect.addEventListener('change', () => {
+      pageSize = Number(pageSizeSelect.value);
+      currentPage = 1;
+      render();
+    });
+
+    firstBtn.addEventListener('click', () => { currentPage = 1; render(); });
+    prevBtn.addEventListener('click', () => { currentPage = Math.max(1, currentPage - 1); render(); });
+    nextBtn.addEventListener('click', () => { currentPage = Math.min(totalPages(), currentPage + 1); render(); });
+    lastBtn.addEventListener('click', () => { currentPage = totalPages(); render(); });
+
+    render();
+  </script>
+  {% endif %}
+
+  <script>
+    const form = document.getElementById('search-form');
+    const submitBtn = document.getElementById('submit-btn');
+    const loadingMask = document.getElementById('loading-mask');
+
+    form.addEventListener('submit', () => {
+      submitBtn.disabled = true;
+      submitBtn.textContent = '生成中...';
+      loadingMask.style.display = 'flex';
+    });
+  </script>
+</body>
+</html>
+

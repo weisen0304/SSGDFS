@@ -1,0 +1,21 @@
+﻿# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Local runtime/cache
+.chrome-profile/
+outputs/
+
+# Debug/temp files
+debug_*.json
+debug_*.html
+page_sample.html
+lubanos.nginx.conf
+
+# Generated excel
+*.xlsx
+
+# OS
+.DS_Store
+Thumbs.db
