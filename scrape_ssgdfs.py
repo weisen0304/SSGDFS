@@ -1,10 +1,19 @@
-﻿import re
-import sys
-from pathlib import Path
 from datetime import datetime
+from pathlib import Path
+import re
+import sys
 
 import pandas as pd
 from playwright.sync_api import sync_playwright
+
+
+ANTI_BOT_MARKERS = [
+    "temporary connection issue",
+    "a temporary connection issue occurred",
+    "잠시 연결에 문제가 발생했습니다",
+    "但刚才出现了短暂的连接问题",
+    "连接问题",
+]
 
 
 def parse_ref_code(text: str) -> str:
@@ -17,17 +26,48 @@ def parse_ref_code(text: str) -> str:
     return m.group(1).strip() if m else ""
 
 
+def build_browser_context(playwright):
+    browser = playwright.chromium.launch(
+        headless=True,
+        args=["--disable-blink-features=AutomationControlled"],
+    )
+    context = browser.new_context(
+        user_agent=(
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/124.0.0.0 Safari/537.36"
+        ),
+        locale="zh-CN",
+        viewport={"width": 1920, "height": 1080},
+        extra_http_headers={
+            "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+            "Referer": "https://www.ssgdfs.com/cn/main",
+        },
+    )
+    context.add_init_script(
+        """
+        Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+        Object.defineProperty(navigator, 'platform', { get: () => 'Win32' });
+        Object.defineProperty(navigator, 'languages', { get: () => ['zh-CN', 'zh', 'en-US', 'en'] });
+        window.chrome = { runtime: {} };
+        """
+    )
+    return browser, context
+
+
 def open_search_page(page, keyword: str, start_count: int) -> None:
     url = (
         "https://www.ssgdfs.com/cn/search/resultsTotal"
         f"?startCount={start_count}&offShop=&suggestReSearchReq=true"
         f"&orReSearchReq=true&query={keyword}"
     )
-    page.goto(url, wait_until="domcontentloaded", timeout=60000)
+    response = page.goto(url, wait_until="domcontentloaded", timeout=60000)
     page.wait_for_timeout(1800)
 
     body_text = page.inner_text("body") if page.locator("body").count() else ""
-    if any(s in body_text for s in ["temporary connection issue", "连接问题", "연결에 문제가"]):
+    body_lower = body_text.lower()
+    status = response.status if response else None
+    if status in {403, 406} or any(marker in body_lower for marker in ANTI_BOT_MARKERS):
         raise RuntimeError("命中风控页，请稍后重试或先手动访问站点后再执行。")
 
 
@@ -85,19 +125,10 @@ def scrape(keyword: str):
         )
 
     with sync_playwright() as p:
-        browser = p.chromium.launch(
-            headless=True,
-            args=["--disable-blink-features=AutomationControlled"],
-        )
-        context = browser.new_context(
-            user_agent=(
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/124.0.0.0 Safari/537.36"
-            ),
-            viewport={"width": 1920, "height": 1080},
-        )
+        browser, context = build_browser_context(p)
         page = context.new_page()
+        page.goto("https://www.ssgdfs.com/cn/main", wait_until="domcontentloaded", timeout=60000)
+        page.wait_for_timeout(2500)
 
         for round_idx in range(1, 3):
             before = len(merged)
@@ -170,4 +201,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
