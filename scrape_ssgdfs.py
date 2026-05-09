@@ -8,9 +8,26 @@ from playwright.sync_api import sync_playwright
 
 
 def parse_ref_from_data_param3(text: str) -> str:
+    """
+    返回完整 RefNO 文本（不截断）。
+    示例：
+    [LF330600]镜之密语香水 50mL
+    [ON]히알루론산 고밀도수분팩*30
+    """
+    value = (text or "").strip()
+    # 某些数据会出现双前缀，如：[[ON]...，这里归一化为 [ON]...
+    if value.startswith("[["):
+        value = value[1:]
+    return value
+
+
+def parse_ref_code(text: str) -> str:
+    """
+    提取 RefNO 的代码部分（方括号内），用于兼容只看代码的场景。
+    """
     if not text:
         return ""
-    m = re.match(r"^\[([^\]]+)\]", text)
+    m = re.match(r"^\[?\[([^\]]+)\]", text)
     return m.group(1).strip() if m else ""
 
 
@@ -108,6 +125,7 @@ def scrape(keyword: str):
                 "商品名": row.get("name", ""),
                 "销售价": row.get("price", ""),
                 "RefNO": parse_ref_from_data_param3(row.get("dataParam3", "")),
+                "RefNO代码": parse_ref_code(row.get("dataParam3", "")),
                 "商品编码": row.get("goosCd", ""),
             }
         )
