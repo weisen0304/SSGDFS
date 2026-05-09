@@ -70,7 +70,19 @@ def extract_page_items(page, keyword: str):
 
 
 def scrape(keyword: str):
-    all_rows = []
+    merged = {}
+
+    def row_key(row: dict) -> str:
+        code = (row.get("goosCd") or "").strip()
+        if code:
+            return f"code:{code}"
+        return "fallback:" + "|".join(
+            [
+                (row.get("brand") or "").strip(),
+                (row.get("name") or "").strip(),
+                parse_ref_code(row.get("dataParam3", "")),
+            ]
+        )
 
     with sync_playwright() as p:
         browser = p.chromium.launch(
@@ -87,21 +99,31 @@ def scrape(keyword: str):
         )
         page = context.new_page()
 
-        open_search_page(page, keyword, 0)
-        first = extract_page_items(page, keyword)
-        all_rows.extend(first["rows"])
+        for round_idx in range(1, 3):
+            before = len(merged)
+            open_search_page(page, keyword, 0)
+            first = extract_page_items(page, keyword)
+            total = first["totalCount"] or len(first["rows"])
+            page_size = first["listCount"] or 40
 
-        total = first["totalCount"] or len(first["rows"])
-        page_size = first["listCount"] or 40
+            for r in first["rows"]:
+                merged[row_key(r)] = r
 
-        for start in range(page_size, total, page_size):
-            open_search_page(page, keyword, start)
-            data = extract_page_items(page, keyword)
-            all_rows.extend(data["rows"])
-            print(f"已抓取分页 startCount={start}，累计 {len(all_rows)}")
+            for start in range(page_size, total, page_size):
+                open_search_page(page, keyword, start)
+                data = extract_page_items(page, keyword)
+                for r in data["rows"]:
+                    merged[row_key(r)] = r
+                print(f"第{round_idx}轮抓取分页 startCount={start}，当前累计 {len(merged)}")
+
+            added = len(merged) - before
+            print(f"第{round_idx}轮完成：新增 {added} 条，累计 {len(merged)} 条")
+            if added == 0:
+                break
 
         browser.close()
 
+    all_rows = list(merged.values())
     cleaned = []
     for row in all_rows:
         cleaned.append(
