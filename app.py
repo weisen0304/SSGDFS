@@ -19,6 +19,14 @@ MAX_HISTORY_SHOW = 30
 SCRAPE_CACHE = {}
 
 
+def format_duration(duration_ms: int) -> str:
+    total_seconds = max(0, int(duration_ms // 1000))
+    hours = total_seconds // 3600
+    minutes = (total_seconds % 3600) // 60
+    seconds = total_seconds % 60
+    return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+
+
 def append_history(keyword: str, total: int, file_name: str, source: str, duration_ms: int) -> None:
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     record = {
@@ -28,6 +36,7 @@ def append_history(keyword: str, total: int, file_name: str, source: str, durati
         "file_name": file_name,
         "source": source,
         "duration_ms": duration_ms,
+        "duration_text": format_duration(duration_ms),
     }
     with HISTORY_FILE.open("a", encoding="utf-8") as f:
         f.write(json.dumps(record, ensure_ascii=False) + "\n")
@@ -98,6 +107,7 @@ def generate():
         file_name=output.name,
         cache_hit=cache_hit,
         duration_ms=duration_ms,
+        duration_text=format_duration(duration_ms),
         history=read_history(),
     )
 
@@ -113,6 +123,76 @@ def clear_history():
     if HISTORY_FILE.exists():
         HISTORY_FILE.unlink()
     return render_template("index.html", rows=[], history=[], message="生成记录已清空")
+
+
+@app.post("/clear-history-and-files")
+def clear_history_and_files():
+    deleted = 0
+    missing = 0
+    if HISTORY_FILE.exists():
+        lines = HISTORY_FILE.read_text(encoding="utf-8").splitlines()
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                record = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            file_name = (record.get("file_name") or "").strip()
+            if not file_name:
+                continue
+            target = OUTPUT_DIR / file_name
+            if target.exists() and target.is_file():
+                target.unlink()
+                deleted += 1
+            else:
+                missing += 1
+        HISTORY_FILE.unlink()
+    return render_template(
+        "index.html",
+        rows=[],
+        history=[],
+        message=f"记录已清空，已删除Excel {deleted} 个，缺失 {missing} 个",
+    )
+
+
+@app.post("/delete-history-item")
+def delete_history_item():
+    keyword = (request.form.get("keyword") or "").strip()
+    record_time = (request.form.get("record_time") or "").strip()
+    file_name = (request.form.get("file_name") or "").strip()
+
+    if not HISTORY_FILE.exists():
+        return render_template("index.html", rows=[], history=[], message="记录文件不存在")
+
+    kept = []
+    removed = 0
+    lines = HISTORY_FILE.read_text(encoding="utf-8").splitlines()
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            record = json.loads(line)
+        except json.JSONDecodeError:
+            # 非法行保留，避免误删
+            kept.append(line)
+            continue
+
+        same = (
+            (record.get("keyword") or "") == keyword
+            and (record.get("time") or "") == record_time
+            and (record.get("file_name") or "") == file_name
+        )
+        if same and removed == 0:
+            removed += 1
+            continue
+        kept.append(json.dumps(record, ensure_ascii=False))
+
+    HISTORY_FILE.write_text("\n".join(kept) + ("\n" if kept else ""), encoding="utf-8")
+    msg = "单条记录已删除" if removed else "未找到要删除的记录"
+    return render_template("index.html", rows=[], history=read_history(), message=msg)
 
 
 @app.get("/download/<path:filename>")

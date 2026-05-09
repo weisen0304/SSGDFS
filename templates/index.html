@@ -79,7 +79,7 @@
   {% if total %}
     <div class="ok">抓取完成：{{ total }} 条</div>
     <div class="small">
-      数据来源：{% if cache_hit %}缓存命中{% else %}实时抓取{% endif %}，耗时 {{ duration_ms or 0 }} ms
+      数据来源：{% if cache_hit %}缓存命中{% else %}实时抓取{% endif %}，耗时 {{ duration_text or '00:00:00' }}
     </div>
     <a class="btn btn-secondary" href="{{ download_url }}">导出 Excel（{{ file_name }}）</a>
 
@@ -126,6 +126,9 @@
       <form method="post" action="{{ url_for('clear_history') }}">
         <button type="submit" class="btn-light">清空生成记录</button>
       </form>
+      <form method="post" action="{{ url_for('clear_history_and_files') }}">
+        <button type="submit" class="btn-light">清空记录并删除Excel</button>
+      </form>
     </div>
     {% if history and history|length > 0 %}
       <table>
@@ -135,8 +138,9 @@
             <th>关键词</th>
             <th>条数</th>
             <th>来源</th>
-            <th>耗时(ms)</th>
+            <th>耗时(时分秒)</th>
             <th>文件名</th>
+            <th>操作</th>
           </tr>
         </thead>
         <tbody>
@@ -146,13 +150,21 @@
             <td>{{ h['keyword'] }}</td>
             <td>{{ h['total'] }}</td>
             <td>{{ '缓存' if h['source'] == 'cache' else '抓取' }}</td>
-            <td>{{ h['duration_ms'] }}</td>
+            <td>{{ h['duration_text'] or '00:00:00' }}</td>
             <td>
               {% if h['file_exists'] %}
                 <a href="{{ h['download_url'] }}">{{ h['file_name'] }}</a>
               {% else %}
                 {{ h['file_name'] }} <span class="small">(文件不存在)</span>
               {% endif %}
+            </td>
+            <td>
+              <form method="post" action="{{ url_for('delete_history_item') }}" onsubmit="return confirm('确认删除这条记录吗？');">
+                <input type="hidden" name="keyword" value="{{ h['keyword'] }}">
+                <input type="hidden" name="record_time" value="{{ h['time'] }}">
+                <input type="hidden" name="file_name" value="{{ h['file_name'] }}">
+                <button type="submit" class="btn-light">删除</button>
+              </form>
             </td>
           </tr>
           {% endfor %}
