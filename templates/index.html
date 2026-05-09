@@ -12,6 +12,7 @@
     button, .btn { padding: 10px 16px; border: none; background: #111; color: #fff; cursor: pointer; text-decoration: none; display: inline-block; border-radius: 6px; }
     button[disabled] { opacity: 0.6; cursor: not-allowed; }
     .btn-secondary { background: #0b63ce; }
+    .btn-light { background: #555; }
     .error { color: #b00020; margin: 10px 0; }
     .ok { color: #1b5e20; margin: 10px 0; }
     .empty { margin: 18px 0; padding: 14px; background: #fafafa; border: 1px dashed #ccc; color: #666; border-radius: 6px; }
@@ -23,6 +24,8 @@
     th { background: #f5f5f5; }
     .pagination { margin-top: 12px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
     .pagination button { padding: 6px 10px; }
+    .history-wrap { margin-top: 26px; }
+    .small { font-size: 12px; color: #666; }
     .loading-mask {
       display: none;
       position: fixed;
@@ -65,6 +68,9 @@
   {% if error %}
     <div class="error">{{ error }}</div>
   {% endif %}
+  {% if message %}
+    <div class="ok">{{ message }}</div>
+  {% endif %}
 
   {% if no_data %}
     <div class="empty">未检索到数据，请更换关键词后重试。</div>
@@ -72,6 +78,9 @@
 
   {% if total %}
     <div class="ok">抓取完成：{{ total }} 条</div>
+    <div class="small">
+      数据来源：{% if cache_hit %}缓存命中{% else %}实时抓取{% endif %}，耗时 {{ duration_ms or 0 }} ms
+    </div>
     <a class="btn btn-secondary" href="{{ download_url }}">导出 Excel（{{ file_name }}）</a>
 
     <div class="toolbar">
@@ -107,6 +116,46 @@
   {% else %}
     <div class="empty">还没有结果。请输入关键词后点击“生成”。</div>
   {% endif %}
+
+  <div class="history-wrap">
+    <h3>生成记录</h3>
+    <div class="toolbar">
+      <form method="post" action="{{ url_for('clear_cache') }}">
+        <button type="submit" class="btn-light">清空缓存</button>
+      </form>
+      <form method="post" action="{{ url_for('clear_history') }}">
+        <button type="submit" class="btn-light">清空生成记录</button>
+      </form>
+    </div>
+    {% if history and history|length > 0 %}
+      <table>
+        <thead>
+          <tr>
+            <th>时间</th>
+            <th>关键词</th>
+            <th>条数</th>
+            <th>来源</th>
+            <th>耗时(ms)</th>
+            <th>文件名</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for h in history %}
+          <tr>
+            <td>{{ h['time'] }}</td>
+            <td>{{ h['keyword'] }}</td>
+            <td>{{ h['total'] }}</td>
+            <td>{{ '缓存' if h['source'] == 'cache' else '抓取' }}</td>
+            <td>{{ h['duration_ms'] }}</td>
+            <td>{{ h['file_name'] }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <div class="empty">暂无生成记录。</div>
+    {% endif %}
+  </div>
 
   <div id="loading-mask" class="loading-mask">
     <div class="loading-box">
