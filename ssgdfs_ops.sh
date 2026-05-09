@@ -39,12 +39,19 @@ require_cmd() {
 
 pull_latest_code() {
   log_info "拉取最新代码..."
-  require_cmd git
   cd "$APP_DIR"
-  git fetch --all --prune
-  git checkout main
-  git pull --ff-only origin main
-  log_info "代码拉取完成。"
+  if [[ -d ".git" ]]; then
+    require_cmd git
+    git fetch --all --prune
+    git checkout main
+    git pull --ff-only origin main
+    log_info "代码拉取完成。"
+  else
+    log_warn "当前目录不是 Git 仓库（无 .git）。"
+    log_warn "请在本地执行上传命令同步代码，例如："
+    echo "  scp -r <本地项目文件> ubuntu@lubanos.com:/home/ubuntu/ssgdfs-web/"
+    log_warn "本步骤已跳过，不影响后续重启与 Nginx 重载。"
+  fi
 }
 
 show_service_status() {
@@ -145,4 +152,3 @@ main() {
 }
 
 main "$@"
-
