@@ -147,7 +147,13 @@
             <td>{{ h['total'] }}</td>
             <td>{{ '缓存' if h['source'] == 'cache' else '抓取' }}</td>
             <td>{{ h['duration_ms'] }}</td>
-            <td>{{ h['file_name'] }}</td>
+            <td>
+              {% if h['file_exists'] %}
+                <a href="{{ h['download_url'] }}">{{ h['file_name'] }}</a>
+              {% else %}
+                {{ h['file_name'] }} <span class="small">(文件不存在)</span>
+              {% endif %}
+            </td>
           </tr>
           {% endfor %}
         </tbody>

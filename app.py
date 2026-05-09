@@ -47,6 +47,11 @@ def read_history(limit: int = MAX_HISTORY_SHOW) -> list[dict]:
         except json.JSONDecodeError:
             continue
     records.reverse()
+    for r in records:
+        file_name = r.get("file_name") or ""
+        file_path = OUTPUT_DIR / file_name if file_name else None
+        r["file_exists"] = bool(file_path and file_path.exists())
+        r["download_url"] = url_for("download", filename=file_name) if file_name else ""
     return records
 
 
